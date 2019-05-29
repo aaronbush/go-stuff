@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
-	"fmt"
+	"log"
+	"os"
 	"time"
+
+	"github.com/aaronbush/go-stuff/cursled/frame"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -16,10 +21,11 @@ type SquareInfo struct {
 }
 
 type GridCord struct {
-	Row    int32
-	Column int32
+	Row    uint8
+	Column uint8
 }
 
+var maxBrightness = float32(50)
 var gridRows = int32(40)
 var gridColumns = int32(20)
 var gridSpacing = int32(20)
@@ -35,6 +41,18 @@ func main() {
 	drawnContents := make(map[GridCord]SquareInfo)
 	trackMouse := false
 	fadeMode := false
+	logMode := true
+
+	// Open a new file for writing only
+	file, err := os.OpenFile(
+		"test.data",
+		os.O_WRONLY|os.O_TRUNC|os.O_CREATE,
+		0666,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
 
 	rl.InitWindow(windowWidth, windowHeight, "pixel drawing")
 
@@ -48,11 +66,21 @@ func main() {
 		drawSquares(traceContents, fadeMode)
 		drawSquares(drawnContents, fadeMode)
 
+		if logMode {
+			exportSquares(file, drawnContents, fadeMode)
+		}
+
 		if rl.IsKeyPressed(rl.KeyF) {
 			fadeMode = !fadeMode
+			log.Printf("Fade Mode: %t", fadeMode)
 		}
 		if rl.IsKeyPressed(rl.KeyT) {
 			trackMouse = !trackMouse
+			log.Printf("Track Mode: %t", trackMouse)
+		}
+		if rl.IsKeyPressed(rl.KeyL) {
+			logMode = !logMode
+			log.Printf("Log Mode: %t", logMode)
 		}
 
 		if trackMouse {
@@ -60,7 +88,7 @@ func main() {
 			squareInfo, err := squareFromCoord(mousePos)
 
 			if err == nil {
-				fmt.Println(mousePos, " -> ", squareInfo)
+				//fmt.Println(mousePos, " -> ", squareInfo)
 				if rl.IsMouseButtonDown(rl.MouseLeftButton) {
 					squareInfo.Color = rl.Red
 					drawnContents[squareInfo.GridCord] = squareInfo
@@ -100,6 +128,34 @@ func drawSquares(squareContets map[GridCord]SquareInfo, fadeMode bool) {
 	}
 }
 
+func exportSquares(file *os.File, squares map[GridCord]SquareInfo, fadeMode bool) {
+	ledInfo := frame.LEDInfo{}
+	var binBuf bytes.Buffer
+	for _, square := range squares {
+		if timeLeft := time.Now().Sub(square.CreatedAt); timeLeft < decayTime {
+			// scale for brightness
+			var alpha = float32(1.0)
+			if fadeMode {
+				alpha = 1.0 - float32(timeLeft.Nanoseconds())/float32(decayTime.Nanoseconds())
+			}
+			// write to I/O
+			ledInfo.Column = square.GridCord.Column
+			ledInfo.Row = square.GridCord.Row
+			ledInfo.Brightness = uint8(maxBrightness * alpha)
+			alpha = alpha
+			err := binary.Write(&binBuf, binary.BigEndian, ledInfo)
+			if err != nil {
+				panic(err)
+			}
+			_, err = file.Write(binBuf.Bytes())
+			if err != nil {
+				log.Println(binBuf)
+				panic(err)
+			}
+		}
+	}
+}
+
 func squareFromCoord(vec rl.Vector2) (SquareInfo, error) { // return top left of square
 	x := int32(vec.X)
 	y := int32(vec.Y)
@@ -112,7 +168,7 @@ func squareFromCoord(vec rl.Vector2) (SquareInfo, error) { // return top left of
 	yPos := y / gridSpacing
 
 	info := SquareInfo{
-		GridCord:  GridCord{xPos, yPos},
+		GridCord:  GridCord{uint8(xPos), uint8(yPos)},
 		Vector2:   rl.NewVector2(float32(xPos*gridSpacing), float32(yPos*gridSpacing)),
 		CreatedAt: time.Now(),
 	}
