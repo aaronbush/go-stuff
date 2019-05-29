@@ -113,13 +113,6 @@ func drawTable(leds map[ScreenKey]LEDInfo, numRows uint8, numColumns uint8) {
 		}
 		fmt.Printf(":%02d\n", row)
 	}
-	// for _, led := range leds {
-	// 	fmt.Println(led)
-	// 	var sb strings.Builder
-	// 	c := color.RGB(led.Red, led.Blue, led.Green, true)
-	// 	sb.WriteString(c.Sprintf("  "))
-	// 	fmt.Println(sb.String())
-	// }
 }
 
 func max(x, y uint16) uint16 {

@@ -33,6 +33,8 @@ func main() {
 	windowWidth := gridColumns * gridSpacing
 	traceContents := make(map[GridCord]SquareInfo)
 	drawnContents := make(map[GridCord]SquareInfo)
+	trackMouse := false
+	fadeMode := false
 
 	rl.InitWindow(windowWidth, windowHeight, "pixel drawing")
 
@@ -41,21 +43,31 @@ func main() {
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.RayWhite)
-		rl.DrawText("woohoo", 190, 200, 20, rl.Red)
-		drawGrid()
-		drawSquares(traceContents)
-		drawSquares(drawnContents)
 
-		mousePos := rl.GetMousePosition()
-		squareInfo, err := squareFromCoord(mousePos)
-		if err == nil {
-			fmt.Println(mousePos, " -> ", squareInfo)
-			if rl.IsMouseButtonDown(rl.MouseLeftButton) {
-				squareInfo.Color = rl.Red
-				drawnContents[squareInfo.GridCord] = squareInfo
-			} else {
-				squareInfo.Color = rl.Blue
-				traceContents[squareInfo.GridCord] = squareInfo
+		drawGrid()
+		drawSquares(traceContents, fadeMode)
+		drawSquares(drawnContents, fadeMode)
+
+		if rl.IsKeyPressed(rl.KeyF) {
+			fadeMode = !fadeMode
+		}
+		if rl.IsKeyPressed(rl.KeyT) {
+			trackMouse = !trackMouse
+		}
+
+		if trackMouse {
+			mousePos := rl.GetMousePosition()
+			squareInfo, err := squareFromCoord(mousePos)
+
+			if err == nil {
+				fmt.Println(mousePos, " -> ", squareInfo)
+				if rl.IsMouseButtonDown(rl.MouseLeftButton) {
+					squareInfo.Color = rl.Red
+					drawnContents[squareInfo.GridCord] = squareInfo
+				} else {
+					squareInfo.Color = rl.Blue
+					traceContents[squareInfo.GridCord] = squareInfo
+				}
 			}
 		}
 		rl.EndDrawing()
@@ -73,11 +85,14 @@ func drawGrid() {
 	}
 }
 
-func drawSquares(squareContets map[GridCord]SquareInfo) {
+func drawSquares(squareContets map[GridCord]SquareInfo, fadeMode bool) {
 	for cord, square := range squareContets {
 		if timeLeft := time.Now().Sub(square.CreatedAt); timeLeft < decayTime {
 			// scale for alpha
-			alpha := 1.0 - float32(timeLeft.Nanoseconds())/float32(decayTime.Nanoseconds())
+			var alpha = float32(1.0)
+			if fadeMode {
+				alpha = 1.0 - float32(timeLeft.Nanoseconds())/float32(decayTime.Nanoseconds())
+			}
 			rl.DrawRectangleV(square.Vector2, rl.NewVector2(gridSpacingFloat, gridSpacingFloat), rl.Fade(square.Color, alpha))
 		} else {
 			delete(squareContets, cord)
