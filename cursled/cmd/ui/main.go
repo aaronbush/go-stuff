@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -25,24 +27,34 @@ type GridCord struct {
 	Column uint8
 }
 
-var maxBrightness = float32(50)
-var gridRows = int32(40)
-var gridColumns = int32(20)
-var gridSpacing = int32(20)
-var gridSpacingFloat = float32(gridSpacing)
-var windowHeight = gridRows * gridSpacing
-var windowWidth = gridColumns * gridSpacing
-var decayTime = 3 * time.Second
+var maxBrightness float32
+var gridRows int32
+var gridColumns int32
+var gridSpacing int32
+var gridSpacingFloat float32
+var windowHeight int32
+var windowWidth int32
+var decayTime time.Duration // = 3 * time.Second
 
 func main() {
-	windowHeight := gridRows * gridSpacing
-	windowWidth := gridColumns * gridSpacing
+	maxBrightness = float32(flag.Int("brightness", 50, "maximum brightness"))
+	gridColumns = int32(*flag.Int("columns", 20, "columns in grid"))
+	gridRows = int32(*flag.Int("rows", 40, "rows in grid"))
+	gridSpacing = int32(*flag.Int("spacing", 20, "grid spacing"))
+	decayTime = *flag.Duration("delay", 3*time.Second, "fade duration")
+	gridSpacingFloat = float32(gridSpacing)
+	flag.Parse()
+
+	windowHeight = gridRows * gridSpacing
+	windowWidth = gridColumns * gridSpacing
 	traceContents := make(map[GridCord]SquareInfo)
 	drawnContents := make(map[GridCord]SquareInfo)
+
 	trackMouse := false
 	fadeMode := false
 	logMode := true
 
+	fmt.Printf("r:%d, c:%d, w:%d x %d\n", gridRows, gridColumns, windowWidth, windowHeight)
 	// Open a new file for writing only
 	file, err := os.OpenFile(
 		"test.data",
