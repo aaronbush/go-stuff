@@ -1,0 +1,7 @@
+* Paint Command Features
+** DONE toggle autoclear mode
+** TODO fade mode
+** TODO flood fill
+
+* Follower Command Features
+** TODO draw data from file/socket
