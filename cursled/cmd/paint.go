@@ -48,6 +48,7 @@ const (
 )
 
 var (
+	fps           int32
 	numRows       int32
 	numColumns    int32
 	spacing       int32
@@ -71,6 +72,7 @@ var paintCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(paintCmd)
 
+	paintCmd.Flags().Int32VarP(&fps, "fps", "f", 30, "frames per second")
 	paintCmd.Flags().Int32VarP(&numRows, "rows", "r", 40, "number of rows")
 	paintCmd.Flags().Int32VarP(&numColumns, "columns", "c", 20, "number of columns")
 	paintCmd.Flags().Int32VarP(&spacing, "spacing", "s", 20, "cell spacing")
@@ -91,14 +93,14 @@ func paint(cmd *cobra.Command, args []string) error {
 	windowHeight := gridHeight + stausBarHeight
 	windowWidth := gridWidth + rightControlWidth
 
-	drawnContents := make(map[GridCord]SquareInfo)
+	gridContents := makeGridContents(gridOrigin, uint8(numRows), uint8(numColumns))
 	spacingFloat = float32(spacing)
 
 	redValue, greenValue, blueValue := new(int), new(int), new(int)
 	*redValue = 255
 
 	fadeMode := false
-	logMode := true
+	logMode := false
 
 	// Open a new file for writing only
 	file, err := os.OpenFile(
@@ -114,7 +116,7 @@ func paint(cmd *cobra.Command, args []string) error {
 	rl.InitWindow(windowWidth, windowHeight, "pixel drawing")
 	rg.LoadGuiStyle("cmd/styles/monokai.style")
 
-	rl.SetTargetFPS(30)
+	rl.SetTargetFPS(fps)
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
@@ -123,15 +125,15 @@ func paint(cmd *cobra.Command, args []string) error {
 		drawColor, decayOrigin := drawColorInputs(rightControlOrigin, redValue, greenValue, blueValue)
 		decayMode, _ = drawDecaySettings(decayOrigin, &decayMode)
 
-		drawSquares(drawnContents, fadeMode)
+		drawSquares(gridContents, fadeMode, decayMode)
 
 		drawGrid(gridOrigin, numRows, numColumns) // after colors are drawn to keep grid lines
 
-		statusText := fmt.Sprintf("fade:%t, log:%t\nFPS: %.1f (%.03f)", fadeMode, logMode, rl.GetFPS(), rl.GetFrameTime())
+		statusText := fmt.Sprintf("fade:%t, log:%t, decay:%t\nFPS: %.1f (%.03f)", fadeMode, logMode, decayMode, rl.GetFPS(), rl.GetFrameTime())
 		rl.DrawText(statusText, int32(statusBarOrigin.X+3), int32(statusBarOrigin.Y), 12, rl.Gray)
 
 		if logMode {
-			exportSquares(file, drawnContents, fadeMode)
+			exportSquares(file, gridContents, fadeMode, decayMode)
 		}
 
 		if rl.IsKeyPressed(rl.KeyF) {
@@ -143,21 +145,28 @@ func paint(cmd *cobra.Command, args []string) error {
 		}
 
 		if rl.IsKeyPressed(rl.KeyC) {
-			for k := range drawnContents {
-				delete(drawnContents, k)
+			for k, v := range gridContents {
+				v.Color = rl.Blank
+				gridContents[k] = v
 			}
 		}
 
 		mousePos := rl.GetMousePosition()
-		squareInfo, err := squareFromCoord(gridOrigin, mousePos)
+		gridCord, err := gridCordFromMouseCord(gridOrigin, mousePos)
 
 		if err == nil {
-			if rl.IsMouseButtonDown(rl.MouseRightButton) {
-				squareInfo.Color = rl.Blank
-			} else if rl.IsMouseButtonDown(rl.MouseLeftButton) {
-				squareInfo.Color = drawColor
+			squareInfo, ok := gridContents[gridCord]
+			if ok {
+				if rl.IsMouseButtonDown(rl.MouseRightButton) {
+					squareInfo.Color = rl.Blank
+				} else if rl.IsMouseButtonDown(rl.MouseLeftButton) {
+					squareInfo.Color = drawColor
+					squareInfo.CreatedAt = time.Now()
+				}
+				gridContents[squareInfo.GridCord] = squareInfo
+			} else {
+				log.Fatal("not found", gridCord)
 			}
-			drawnContents[squareInfo.GridCord] = squareInfo
 		}
 
 		rl.EndDrawing()
@@ -216,68 +225,86 @@ func drawDecaySettings(position rl.Vector2, decayValue *bool) (bool, rl.Vector2)
 	return *decayValue, position
 }
 
-func drawSquares(squareContets map[GridCord]SquareInfo, fadeMode bool) {
-	for cord, square := range squareContets {
-		if decayMode {
-			if timeLeft := time.Now().Sub(square.CreatedAt); timeLeft < decayTime {
-				// scale for alpha
-				var alpha = float32(1.0)
-				if fadeMode {
-					alpha = 1.0 - float32(timeLeft.Nanoseconds())/float32(decayTime.Nanoseconds())
-				}
-				rl.DrawRectangleV(square.Origin, rl.NewVector2(spacingFloat, spacingFloat), rl.Fade(square.Color, alpha))
-			} else {
-				delete(squareContets, cord)
-			}
-		} else {
-			rl.DrawRectangleV(square.Origin, rl.NewVector2(spacingFloat, spacingFloat), square.Color)
+func drawSquares(gridContents map[GridCord]SquareInfo, fadeMode, decayMode bool) {
+	for cord, square := range gridContents {
+		color := fadeAndDecay(square, fadeMode, decayMode)
+		square.Color = color
+		gridContents[cord] = square
+		rl.DrawRectangleV(square.Origin, rl.NewVector2(spacingFloat, spacingFloat), color)
+	}
+}
+
+func exportSquares(file *os.File, squares map[GridCord]SquareInfo, fadeMode, decayMode bool) {
+	ledInfo := frame.LEDInfo{}
+	var binBuf bytes.Buffer
+	for _, square := range squares {
+		color := fadeAndDecay(square, fadeMode, decayMode)
+
+		ledInfo.Column = square.GridCord.Column
+		ledInfo.Row = square.GridCord.Row
+		ledInfo.Brightness = color.A
+		ledInfo.Red = square.Color.R
+		ledInfo.Blue = square.Color.B
+		ledInfo.Green = square.Color.G
+
+		err := binary.Write(&binBuf, binary.BigEndian, ledInfo)
+		if err != nil {
+			panic(err)
+		}
+		_, err = file.Write(binBuf.Bytes())
+		if err != nil {
+			log.Println(binBuf)
+			panic(err)
 		}
 	}
 }
 
-func exportSquares(file *os.File, squares map[GridCord]SquareInfo, fadeMode bool) {
-	ledInfo := frame.LEDInfo{}
-	var binBuf bytes.Buffer
-	for _, square := range squares {
+func fadeAndDecay(square SquareInfo, fadeMode, decayMode bool) rl.Color {
+	if decayMode {
 		if timeLeft := time.Now().Sub(square.CreatedAt); timeLeft < decayTime {
-			// scale for brightness
+			// scale for alpha
 			var alpha = float32(1.0)
 			if fadeMode {
 				alpha = 1.0 - float32(timeLeft.Nanoseconds())/float32(decayTime.Nanoseconds())
 			}
-			// write to I/O
-			ledInfo.Column = square.GridCord.Column
-			ledInfo.Row = square.GridCord.Row
-			ledInfo.Brightness = uint8(maxBrightness * alpha)
-			alpha = alpha
-			err := binary.Write(&binBuf, binary.BigEndian, ledInfo)
-			if err != nil {
-				panic(err)
-			}
-			_, err = file.Write(binBuf.Bytes())
-			if err != nil {
-				log.Println(binBuf)
-				panic(err)
-			}
+			return rl.Fade(square.Color, alpha)
 		}
+		return rl.Blank
+	}
+	return square.Color
+}
+
+func makeGridContents(gridOrigin rl.Vector2, numRows, numColumns uint8) map[GridCord]SquareInfo {
+	gridContents := make(map[GridCord]SquareInfo)
+
+	for r := uint8(0); r < numRows; r++ {
+		for c := uint8(0); c < numColumns; c++ {
+			squareInfo := makeSquare(gridOrigin, r, c)
+			gridContents[squareInfo.GridCord] = squareInfo
+		}
+	}
+	return gridContents
+}
+
+func makeSquare(gridOrigin rl.Vector2, row, column uint8) SquareInfo {
+	colInt32, rowInt32 := int32(column), int32(row)
+
+	return SquareInfo{
+		GridCord: GridCord{column, row},
+		Origin:   rl.NewVector2(float32(colInt32*spacing)+gridOrigin.X, float32(rowInt32*spacing)+gridOrigin.Y),
 	}
 }
 
-func squareFromCoord(gridOrigin, vec rl.Vector2) (SquareInfo, error) { // return top left of square
-	x := int32(vec.X + gridOrigin.X)
-	y := int32(vec.Y + gridOrigin.Y)
+func gridCordFromMouseCord(gridOrigin, mouseVec rl.Vector2) (GridCord, error) {
+	x := int32(mouseVec.X + gridOrigin.X)
+	y := int32(mouseVec.Y + gridOrigin.Y)
 
 	if x <= 0 || y <= 0 ||
 		x >= gridWidth || y >= gridHeight {
-		return SquareInfo{}, errors.New("Outside of screen bounds")
+		return GridCord{}, errors.New("Outside of screen bounds")
 	}
 	xPos := x / spacing
 	yPos := y / spacing
 
-	info := SquareInfo{
-		GridCord:  GridCord{uint8(xPos), uint8(yPos)},
-		Origin:    rl.NewVector2(float32(xPos*spacing)+gridOrigin.X, float32(yPos*spacing)+gridOrigin.Y),
-		CreatedAt: time.Now(),
-	}
-	return info, nil
+	return GridCord{uint8(xPos), uint8(yPos)}, nil
 }

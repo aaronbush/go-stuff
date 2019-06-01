@@ -1,5 +1,6 @@
 * Project Features
 ** TODO Add global README with good documentation
+** TODO research best practice for globals and func arguments
 
 * Paint Command Features
 ** DONE toggle autoclear mode
@@ -13,6 +14,9 @@
 ** DONE default color at startup vs. blank/black
 ** DONE clear screen key command 'c'
 ** DONE proper loading of styles withing cmd dir
+** DONE flag for FPS
+** TODO add input box for brightness / alpha
+** DONE BUG mouse w/o button is clearing square contents (refactor to make map of squares vs. recreate each time)
 
 * Follower Command Features
 ** TODO draw data from file/socket
