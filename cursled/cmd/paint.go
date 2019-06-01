@@ -1,4 +1,4 @@
-// Copyright © 2019 NAME HERE <EMAIL ADDRESS>
+// Copyright © 2019 Aaron S. Bush <asb.bush@gmail.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -48,23 +48,16 @@ const (
 )
 
 var (
-	numRows            int32
-	numColumns         int32
-	spacing            int32
-	spacingFloat       float32
-	maxBrightness      float32
-	decayTime          time.Duration
-	windowHeight       int32
-	windowWidth        int32
-	gridOrigin         rl.Vector2
-	gridHeight         int32
-	gridWidth          int32
-	statusBarOrigin    rl.Vector2
-	rightControlOrigin rl.Vector2
-	stausBarHeight     int32 = 60
-	rightControlWidth  int32 = 60
-	gridColor                = rl.RayWhite
-	decayMode                = false
+	numRows       int32
+	numColumns    int32
+	spacing       int32
+	spacingFloat  float32
+	maxBrightness float32
+	decayTime     time.Duration
+	gridHeight    int32
+	gridWidth     int32
+	gridColor     = rl.RayWhite
+	decayMode     = false
 )
 
 // paintCmd represents the paint command
@@ -78,15 +71,6 @@ var paintCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(paintCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// paintCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// paintCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	paintCmd.Flags().Int32VarP(&numRows, "rows", "r", 40, "number of rows")
 	paintCmd.Flags().Int32VarP(&numColumns, "columns", "c", 20, "number of columns")
 	paintCmd.Flags().Int32VarP(&spacing, "spacing", "s", 20, "cell spacing")
@@ -95,23 +79,24 @@ func init() {
 }
 
 func paint(cmd *cobra.Command, args []string) error {
-	gridOrigin = rl.NewVector2(0, 0)
+	gridOrigin := rl.NewVector2(0, 3)
 	gridHeight = numRows * spacing
 	gridWidth = numColumns * spacing
 
-	statusBarOrigin = rl.NewVector2(gridOrigin.X, gridOrigin.Y+float32(gridHeight))
-	rightControlOrigin = rl.NewVector2(gridOrigin.X+float32(gridWidth), gridOrigin.Y)
+	statusBarOrigin := rl.NewVector2(gridOrigin.X, gridOrigin.Y+float32(gridHeight))
+	rightControlOrigin := rl.NewVector2(gridOrigin.X+float32(gridWidth), gridOrigin.Y)
+	stausBarHeight := int32(60)
+	rightControlWidth := int32(60)
 
-	windowHeight = gridHeight + stausBarHeight
-	windowWidth = gridWidth + stausBarHeight
+	windowHeight := gridHeight + stausBarHeight
+	windowWidth := gridWidth + rightControlWidth
 
-	traceContents := make(map[GridCord]SquareInfo)
 	drawnContents := make(map[GridCord]SquareInfo)
 	spacingFloat = float32(spacing)
 
 	redValue, greenValue, blueValue := new(int), new(int), new(int)
+	*redValue = 255
 
-	trackMouse := false
 	fadeMode := false
 	logMode := true
 
@@ -127,7 +112,7 @@ func paint(cmd *cobra.Command, args []string) error {
 	defer file.Close()
 
 	rl.InitWindow(windowWidth, windowHeight, "pixel drawing")
-	rg.LoadGuiStyle("styles/solarized_light.style")
+	rg.LoadGuiStyle("cmd/styles/monokai.style")
 
 	rl.SetTargetFPS(30)
 
@@ -138,12 +123,11 @@ func paint(cmd *cobra.Command, args []string) error {
 		drawColor, decayOrigin := drawColorInputs(rightControlOrigin, redValue, greenValue, blueValue)
 		decayMode, _ = drawDecaySettings(decayOrigin, &decayMode)
 
-		drawSquares(traceContents, fadeMode)
 		drawSquares(drawnContents, fadeMode)
 
-		drawGrid() // after colors are drawn to keep grid lines
+		drawGrid(gridOrigin, numRows, numColumns) // after colors are drawn to keep grid lines
 
-		statusText := fmt.Sprintf("fade:%t, track:%t, log:%t\nFPS: %.1f (%.03f)", fadeMode, trackMouse, logMode, rl.GetFPS(), rl.GetFrameTime())
+		statusText := fmt.Sprintf("fade:%t, log:%t\nFPS: %.1f (%.03f)", fadeMode, logMode, rl.GetFPS(), rl.GetFrameTime())
 		rl.DrawText(statusText, int32(statusBarOrigin.X+3), int32(statusBarOrigin.Y), 12, rl.Gray)
 
 		if logMode {
@@ -153,26 +137,27 @@ func paint(cmd *cobra.Command, args []string) error {
 		if rl.IsKeyPressed(rl.KeyF) {
 			fadeMode = !fadeMode
 		}
-		if rl.IsKeyPressed(rl.KeyT) {
-			trackMouse = !trackMouse
-		}
+
 		if rl.IsKeyPressed(rl.KeyL) {
 			logMode = !logMode
 		}
 
-		if trackMouse {
-			mousePos := rl.GetMousePosition()
-			squareInfo, err := squareFromCoord(mousePos)
-
-			if err == nil {
-				if rl.IsMouseButtonDown(rl.MouseRightButton) {
-					squareInfo.Color = rl.Blank
-					drawnContents[squareInfo.GridCord] = squareInfo
-				} else if rl.IsMouseButtonDown(rl.MouseLeftButton) {
-					squareInfo.Color = drawColor
-					traceContents[squareInfo.GridCord] = squareInfo
-				}
+		if rl.IsKeyPressed(rl.KeyC) {
+			for k := range drawnContents {
+				delete(drawnContents, k)
 			}
+		}
+
+		mousePos := rl.GetMousePosition()
+		squareInfo, err := squareFromCoord(gridOrigin, mousePos)
+
+		if err == nil {
+			if rl.IsMouseButtonDown(rl.MouseRightButton) {
+				squareInfo.Color = rl.Blank
+			} else if rl.IsMouseButtonDown(rl.MouseLeftButton) {
+				squareInfo.Color = drawColor
+			}
+			drawnContents[squareInfo.GridCord] = squareInfo
 		}
 
 		rl.EndDrawing()
@@ -182,7 +167,7 @@ func paint(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func drawGrid() {
+func drawGrid(gridOrigin rl.Vector2, numRows, numColumns int32) {
 	// draw row lines
 	for rowNum, rowBegin := int32(0), gridOrigin; rowNum <= numRows; rowNum++ {
 		rowEnd := rl.NewVector2(rowBegin.X+float32(gridWidth), rowBegin.Y)
@@ -278,9 +263,9 @@ func exportSquares(file *os.File, squares map[GridCord]SquareInfo, fadeMode bool
 	}
 }
 
-func squareFromCoord(vec rl.Vector2) (SquareInfo, error) { // return top left of square
-	x := int32(vec.X)
-	y := int32(vec.Y)
+func squareFromCoord(gridOrigin, vec rl.Vector2) (SquareInfo, error) { // return top left of square
+	x := int32(vec.X + gridOrigin.X)
+	y := int32(vec.Y + gridOrigin.Y)
 
 	if x <= 0 || y <= 0 ||
 		x >= gridWidth || y >= gridHeight {
@@ -291,7 +276,7 @@ func squareFromCoord(vec rl.Vector2) (SquareInfo, error) { // return top left of
 
 	info := SquareInfo{
 		GridCord:  GridCord{uint8(xPos), uint8(yPos)},
-		Origin:    rl.NewVector2(float32(xPos*spacing), float32(yPos*spacing)),
+		Origin:    rl.NewVector2(float32(xPos*spacing)+gridOrigin.X, float32(yPos*spacing)+gridOrigin.Y),
 		CreatedAt: time.Now(),
 	}
 	return info, nil

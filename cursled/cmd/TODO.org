@@ -1,7 +1,18 @@
+* Project Features
+** TODO Add global README with good documentation
+
 * Paint Command Features
 ** DONE toggle autoclear mode
-** TODO fade mode
-** TODO flood fill
+** DONE grid top row doesn't appear to be drawn or is hidden by chrome
+** DONE remove track mode
+** DONE fade mode button
+** TODO flood fill feature
+** TODO add a flag for file name
+** TODO test the right mouse button
+** DONE grid offset not taken into account for drawing colors
+** DONE default color at startup vs. blank/black
+** DONE clear screen key command 'c'
+** DONE proper loading of styles withing cmd dir
 
 * Follower Command Features
 ** TODO draw data from file/socket
