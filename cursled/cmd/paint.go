@@ -60,6 +60,7 @@ var (
 	gridWidth     int32
 	gridColor     = rl.RayWhite
 	decayMode     = false
+	binaryLog     string
 )
 
 // paintCmd represents the paint command
@@ -79,6 +80,7 @@ func init() {
 	paintCmd.Flags().Int32VarP(&spacing, "spacing", "s", 20, "cell spacing")
 	paintCmd.Flags().Float32VarP(&maxBrightness, "brightness", "b", 50, "max brightness")
 	paintCmd.Flags().DurationVarP(&decayTime, "decayTime", "t", 3*time.Second, "decay time (seconds)")
+	paintCmd.Flags().StringVarP(&binaryLog, "binaryLog", "l", "test.data", "binary log file name")
 
 	log.SetLevel(log.DebugLevel)
 }
@@ -107,15 +109,15 @@ func paint(cmd *cobra.Command, args []string) error {
 	floodFillMode := false
 
 	// Open a new file for writing only
-	file, err := os.OpenFile(
-		"test.data",
+	binaryLogFile, err := os.OpenFile(
+		binaryLog,
 		os.O_WRONLY|os.O_TRUNC|os.O_CREATE,
 		0666,
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close()
+	defer binaryLogFile.Close()
 
 	rl.InitWindow(windowWidth, windowHeight, "pixel drawing")
 	rg.LoadGuiStyle("cmd/styles/monokai.style")
@@ -137,7 +139,7 @@ func paint(cmd *cobra.Command, args []string) error {
 		rl.DrawText(statusText, int32(statusBarOrigin.X+3), int32(statusBarOrigin.Y), 12, rl.Gray)
 
 		if logMode {
-			exportSquares(file, gridContents, fadeMode, decayMode)
+			exportSquares(binaryLogFile, gridContents, fadeMode, decayMode)
 		}
 
 		if rl.IsKeyPressed(rl.KeyF) {
