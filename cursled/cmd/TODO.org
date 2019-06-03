@@ -1,12 +1,14 @@
 * Project Features
+** TODO research best practice for globals and func arguments
+** TODO There are no interfaces/receivers in my own code... learn more and see if there is a place for this to help
 ** TODO Is Cobra structuring the commands correctly?  Cmds are all in cmd and not a sub-dir for each cmd (would have expected a sub-dir per cmd).
 ** TODO Add global README with good documentation
 ** TODO Tests!!
-** TODO research best practice for globals and func arguments
-** TODO There are no interfaces/receivers in my own code... learn more and see if there is a place for this to help
 
 * Paint Command Features
 ** TODO optimization to not write to binary log file when nothing has changed; file gets very large at 30FPS ;
+*** TODO understand method vs func
+*** TODO research if we can treat grid as an io.Writer
 ** TODO add input box for brightness / alpha
 ** TODO Feature to capture frames and build an animated 'gif'-tyle image vs. drawing directly to LED
 ** TODO See if some of the numeric types can be standardized; e.g. numRows is int32 but the struct for grid is only supporting uint8 row number.
