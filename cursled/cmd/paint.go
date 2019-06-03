@@ -19,10 +19,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/aaronbush/go-stuff/cursled/frame"
 	rg "github.com/gen2brain/raylib-go/raygui"
@@ -78,6 +79,8 @@ func init() {
 	paintCmd.Flags().Int32VarP(&spacing, "spacing", "s", 20, "cell spacing")
 	paintCmd.Flags().Float32VarP(&maxBrightness, "brightness", "b", 50, "max brightness")
 	paintCmd.Flags().DurationVarP(&decayTime, "decayTime", "t", 3*time.Second, "decay time (seconds)")
+
+	log.SetLevel(log.DebugLevel)
 }
 
 func paint(cmd *cobra.Command, args []string) error {
@@ -101,6 +104,7 @@ func paint(cmd *cobra.Command, args []string) error {
 
 	fadeMode := false
 	logMode := false
+	floodFillMode := false
 
 	// Open a new file for writing only
 	file, err := os.OpenFile(
@@ -144,6 +148,10 @@ func paint(cmd *cobra.Command, args []string) error {
 			logMode = !logMode
 		}
 
+		if rl.IsKeyPressed(rl.KeyB) {
+			floodFillMode = !floodFillMode
+		}
+
 		if rl.IsKeyPressed(rl.KeyC) {
 			for k, v := range gridContents {
 				v.Color = rl.Blank
@@ -160,7 +168,10 @@ func paint(cmd *cobra.Command, args []string) error {
 				if rl.IsMouseButtonDown(rl.MouseRightButton) {
 					squareInfo.Color = rl.Blank
 				} else if rl.IsMouseButtonDown(rl.MouseLeftButton) {
-					squareInfo.Color = drawColor
+					if floodFillMode {
+						floodFill(gridContents, squareInfo, drawColor)
+					}
+					squareInfo.Color = drawColor // might be redundant if we just filled it
 					squareInfo.CreatedAt = time.Now()
 				}
 				gridContents[squareInfo.GridCord] = squareInfo
@@ -290,7 +301,7 @@ func makeSquare(gridOrigin rl.Vector2, row, column uint8) SquareInfo {
 	colInt32, rowInt32 := int32(column), int32(row)
 
 	return SquareInfo{
-		GridCord: GridCord{column, row},
+		GridCord: GridCord{Row: row, Column: column},
 		Origin:   rl.NewVector2(float32(colInt32*spacing)+gridOrigin.X, float32(rowInt32*spacing)+gridOrigin.Y),
 	}
 }
@@ -306,5 +317,96 @@ func gridCordFromMouseCord(gridOrigin, mouseVec rl.Vector2) (GridCord, error) {
 	xPos := x / spacing
 	yPos := y / spacing
 
-	return GridCord{uint8(xPos), uint8(yPos)}, nil
+	return GridCord{Row: uint8(yPos), Column: uint8(xPos)}, nil
+}
+
+/*
+Flood-fill (node, target-color, replacement-color):
+ 1. If target-color is equal to replacement-color, return.
+ 2. If color of node is not equal to target-color, return.
+ 3. Set Q to the empty queue.
+ 4. Add node to Q.
+ 5. For each element N of Q:
+ 6.     Set w and e equal to N.
+ 7.     Move w to the west until the color of the node to the west of w no longer matches target-color.
+ 8.     Move e to the east until the color of the node to the east of e no longer matches target-color.
+ 9.     For each node n between w and e:
+10.         Set the color of n to replacement-color.
+11.         If the color of the node to the north of n is target-color, add that node to Q.
+12.         If the color of the node to the south of n is target-color, add that node to Q.
+13. Continue looping until Q is exhausted.
+14. Return.
+*/
+func floodFill(gridContents map[GridCord]SquareInfo, square SquareInfo, newColor rl.Color) int {
+	squaresChanged := 0
+	targetColor := square.Color
+	if targetColor == newColor {
+		return squaresChanged
+	}
+	var queue []SquareInfo
+	queue = append(queue, square)
+
+	// for _, n := range queue {
+	for i := 0; i < len(queue); i++ {
+
+		west, east := queue[i], queue[i]
+
+		// Go West
+		west = furthestSquare(gridContents, west, targetColor, func(a, b uint8) uint8 { return a - b })
+		east = furthestSquare(gridContents, east, targetColor, func(a, b uint8) uint8 { return a + b })
+
+		// set nodes in between to newColor
+		for wCol, eCol := west.GridCord.Column, east.GridCord.Column; wCol <= eCol; wCol++ {
+			currentCord := GridCord{Row: west.GridCord.Row, Column: wCol}
+			newSquare, ok := gridContents[currentCord]
+			if !ok {
+				panic(fmt.Sprintf("should have found square at %v", currentCord))
+			}
+			newSquare.Color = newColor
+			gridContents[currentCord] = newSquare
+			squaresChanged++
+
+			// check to noth
+			if currentCord.Row > 0 {
+				northCord := currentCord
+				northCord.Row--
+				northSquare, ok := gridContents[northCord]
+				if ok && northSquare.Color == targetColor {
+					//	fmt.Printf("Adding %v to the north\n", northSquare)
+					queue = append(queue, northSquare)
+				}
+			}
+			// check to the south
+			if currentCord.Row < uint8(numRows)-1 {
+				southCord := currentCord
+				southCord.Row++
+				southSquare, ok := gridContents[southCord]
+				if ok && southSquare.Color == targetColor {
+					//fmt.Printf("Adding %v to the south\n", southSquare)
+					queue = append(queue, southSquare)
+				}
+			}
+		}
+	}
+	return squaresChanged
+}
+
+func furthestSquare(gridContents map[GridCord]SquareInfo, startingPoint SquareInfo, targetColor rl.Color, f func(a, b uint8) uint8) SquareInfo {
+	result := startingPoint
+	//fmt.Printf("Started at: %+v for target color: %+v\n", startingPoint, targetColor)
+	for {
+		squareNext := result.GridCord
+		squareNext.Column = f(squareNext.Column, 1)
+		//	fmt.Printf("square to squareNext: %+v\n", squareNext)
+		tSquare, ok := gridContents[squareNext]
+		if !ok || tSquare.Color != targetColor {
+			//		fmt.Printf("stopped at %+v/%t\n", tSquare, ok)
+			break
+		}
+		result = tSquare
+		//	fmt.Printf("updated squareNext to: %+v\n", tSquare)
+	}
+
+	//	fmt.Printf("Ended at: %+v\n", result)
+	return result
 }

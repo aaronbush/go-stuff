@@ -9,14 +9,16 @@ type Foo struct {
 }
 
 func main() {
-	m := make(map[int]Foo)
-	m[1] = Foo{"a"}
+	var s []int
 
-	fmt.Println(m)
+	s = append(s, 0)
 
-	f := m[1]
-	f.word = "b"
-	m[1] = f
-
-	fmt.Println(m)
+	for i := 0; i < len(s); i++ {
+		fmt.Println(s[i])
+		s = append(s, i+1)
+		//	i++
+		// if i == len(s) {
+		// break
+		// }
+	}
 }
